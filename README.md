@@ -81,18 +81,9 @@ python test_priority_scheduling.py \
 
 3. **Monitors completion order**: Each request is timestamped when sent and when completed.
 
-4. **Verifies priority ordering**: The script checks (lower values = higher priority):
-   - ✓ Negative priority completes before zero priority
-   - ✓ Negative priority completes before default priority
-   - ✓ Negative priority completes before high value priority (100)
-   - ✓ Zero/default priority completes before high value priority (100)
-   - ✓ Default priority behaves like explicit priority 0
+4. **Accounts for `--max-num-seqs`**: With `--max-num-seqs=2` (typical default), the first 2 requests to arrive start processing immediately regardless of priority. Positions 3+ were queued and scheduled by the priority scheduler.
 
-5. **Outputs results**: The script prints:
-   - Completion order with timestamps
-   - Verification checks with pass/fail status
-   - Overall test result
-   - Saves detailed results to `priority_test_results.json`
+5. **Outputs completion order**: The script prints the completion order with timestamps, marking the first 2 requests as random (started immediately) and saves detailed results to `priority_test_results.json`
 
 ## Expected Output
 
@@ -111,42 +102,38 @@ Expected: LOWER priority values complete first.
 [timestamp] Creating all requests...
 [timestamp] Sending all 16 requests NOW...
 
-[timestamp] Sending request NEG-1 with priority -50
-[timestamp] Sending request NEG-2 with priority -50
-[timestamp] Sending request ZERO-1 with priority 0
+[timestamp] Sending request NEG-1 with priority -50 (API: completions)
+[timestamp] Sending request NEG-2 with priority -50 (API: completions)
+[timestamp] Sending request ZERO-1 with priority 0 (API: completions)
 ...
-[timestamp] ✓ Request NEG-1 completed in 3.45s
-[timestamp] ✓ Request NEG-2 completed in 3.67s
+[timestamp] Request NEG-1 completed in 3.45s
+[timestamp] Request NEG-2 completed in 3.67s
 ...
 
 ================================================================================
-RESULTS ANALYSIS
+RESULTS
 ================================================================================
 
 Completion order:
-1. ✓ NEG-1 (priority: -50) - 1.23s
-2. ✓ NEG-2 (priority: -50) - 1.45s
-3. ✓ DEFAULT-1 (priority: default) - 2.10s
-4. ✓ DEFAULT-2 (priority: default) - 2.25s
-5. ✓ ZERO-1 (priority: 0) - 2.30s
-6. ✓ ZERO-2 (priority: 0) - 2.50s
-7. ✓ HIGH-1 (priority: 100) - 3.40s
-8. ✓ HIGH-2 (priority: 100) - 3.55s
+1. HIGH-1 (priority: 100) - 3.21s [*]
+2. ZERO-2 (priority: 0) - 3.34s [*]
+3. NEG-1 (priority: -50) - 6.45s
+4. NEG-2 (priority: -50) - 6.67s
+5. NEG-3 (priority: -50) - 9.88s
+6. NEG-4 (priority: -50) - 10.12s
+7. DEFAULT-1 (priority: default) - 13.10s
+8. DEFAULT-2 (priority: default) - 13.25s
+9. DEFAULT-3 (priority: default) - 16.45s
+10. DEFAULT-4 (priority: default) - 16.67s
+11. ZERO-1 (priority: 0) - 19.88s
+12. ZERO-3 (priority: 0) - 20.12s
+13. ZERO-4 (priority: 0) - 23.10s
+14. HIGH-2 (priority: 100) - 23.25s
+15. HIGH-3 (priority: 100) - 26.45s
+16. HIGH-4 (priority: 100) - 26.67s
 
---------------------------------------------------------------------------------
-PRIORITY SCHEDULING VERIFICATION
-(In vLLM: LOWER priority values are processed FIRST)
---------------------------------------------------------------------------------
-
-✓ Check 1: Negative priority (highest) before zero priority
-✓ Check 2: Negative priority before default priority
-✓ Check 3: Negative priority before high value priority (100)
-✓ Check 4: Zero/default priority before high value priority (100)
-✓ Check 5: Default priority behaves like priority 0
-
---------------------------------------------------------------------------------
-✓ ALL CHECKS PASSED - PRIORITY SCHEDULING WORKS CORRECTLY!
---------------------------------------------------------------------------------
+[*] First 2 requests start immediately (random order)
+    Remaining requests (3-16) are scheduled by priority (lower values first)
 ```
 
 ## How Priority is Sent

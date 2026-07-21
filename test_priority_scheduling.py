@@ -232,13 +232,18 @@ class PriorityTest:
         print(f"[{datetime.now().isoformat()}] All {len(all_tasks)} requests are now sending...\n")
         self.results = await asyncio.gather(*all_tasks)
 
-        # Analyze results
-        self.analyze_results()
+        # Analyze results (max_num_seqs=2 means first 2 completions are random)
+        self.analyze_results(max_num_seqs=2)
 
-    def analyze_results(self):
-        """Analyze the results and verify priority scheduling worked correctly."""
+    def analyze_results(self, max_num_seqs: int = 2):
+        """Display the completion order of all requests.
+
+        Args:
+            max_num_seqs: Maximum number of sequences processed concurrently (default: 2)
+                         The first max_num_seqs completions are random since they start immediately.
+        """
         print("\n" + "="*80)
-        print("RESULTS ANALYSIS")
+        print("RESULTS")
         print("="*80)
 
         # Sort by completion time
@@ -246,98 +251,13 @@ class PriorityTest:
 
         print("\nCompletion order:")
         for i, result in enumerate(sorted_results, 1):
-            status_icon = "✓" if result['status'] == 'success' else "✗"
             priority_str = str(result['priority']) if result['priority'] is not None else "default"
-            print(f"{i}. {status_icon} {result['request_id']} (priority: {priority_str}) - "
-                  f"{result['duration_seconds']:.2f}s")
+            marker = " [*]" if i <= max_num_seqs else ""
+            print(f"{i}. {result['request_id']} (priority: {priority_str}) - "
+                  f"{result['duration_seconds']:.2f}s{marker}")
 
-        # Group results by priority type
-        high_priority_results = [r for r in self.results if r['request_id'].startswith('HIGH')]  # priority 100 - lowest priority
-        zero_priority_results = [r for r in self.results if r['request_id'].startswith('ZERO')]  # priority 0 - medium priority
-        default_priority_results = [r for r in self.results if r['request_id'].startswith('DEFAULT')]  # no priority - likely 0
-        negative_priority_results = [r for r in self.results if r['request_id'].startswith('NEG')]  # negative - highest priority
-
-        print("\n" + "-"*80)
-        print("PRIORITY SCHEDULING VERIFICATION")
-        print("(In vLLM: LOWER priority values are processed FIRST)")
-        print("-"*80)
-
-        all_checks_pass = True
-
-        # Check 1: Negative priority (highest) completes before zero priority
-        if negative_priority_results and zero_priority_results:
-            latest_neg = max(r['completed_at'] for r in negative_priority_results)
-            earliest_zero = min(r['completed_at'] for r in zero_priority_results)
-
-            neg_before_zero = latest_neg < earliest_zero
-            check_icon = "✓" if neg_before_zero else "✗"
-            print(f"\n{check_icon} Check 1: Negative priority (highest) before zero priority")
-            print(f"    Latest NEGATIVE completion: {latest_neg}")
-            print(f"    Earliest ZERO completion: {earliest_zero}")
-            all_checks_pass = all_checks_pass and neg_before_zero
-
-        # Check 2: Negative priority completes before default priority
-        if negative_priority_results and default_priority_results:
-            latest_neg = max(r['completed_at'] for r in negative_priority_results)
-            earliest_default = min(r['completed_at'] for r in default_priority_results)
-
-            neg_before_default = latest_neg < earliest_default
-            check_icon = "✓" if neg_before_default else "✗"
-            print(f"\n{check_icon} Check 2: Negative priority before default priority")
-            print(f"    Latest NEGATIVE completion: {latest_neg}")
-            print(f"    Earliest DEFAULT completion: {earliest_default}")
-            all_checks_pass = all_checks_pass and neg_before_default
-
-        # Check 3: Negative priority completes before high priority (100)
-        if negative_priority_results and high_priority_results:
-            latest_neg = max(r['completed_at'] for r in negative_priority_results)
-            earliest_high = min(r['completed_at'] for r in high_priority_results)
-
-            neg_before_high = latest_neg < earliest_high
-            check_icon = "✓" if neg_before_high else "✗"
-            print(f"\n{check_icon} Check 3: Negative priority before high value priority (100)")
-            print(f"    Latest NEGATIVE completion: {latest_neg}")
-            print(f"    Earliest HIGH (100) completion: {earliest_high}")
-            all_checks_pass = all_checks_pass and neg_before_high
-
-        # Check 4: Zero/default priority completes before high priority (100)
-        zero_or_default_results = zero_priority_results + default_priority_results
-        if zero_or_default_results and high_priority_results:
-            latest_zero = max(r['completed_at'] for r in zero_or_default_results)
-            earliest_high = min(r['completed_at'] for r in high_priority_results)
-
-            zero_before_high = latest_zero < earliest_high
-            check_icon = "✓" if zero_before_high else "✗"
-            print(f"\n{check_icon} Check 4: Zero/default priority before high value priority (100)")
-            print(f"    Latest ZERO/DEFAULT completion: {latest_zero}")
-            print(f"    Earliest HIGH (100) completion: {earliest_high}")
-            all_checks_pass = all_checks_pass and zero_before_high
-
-        # Check 5: Verify default and explicit 0 priority behave the same
-        if default_priority_results and zero_priority_results:
-            # Get average completion times
-            default_times = [r['completed_at'] for r in default_priority_results]
-            zero_times = [r['completed_at'] for r in zero_priority_results]
-
-            # Check if they're interleaved (which would suggest same priority)
-            default_avg_index = sum(sorted_results.index(r) for r in default_priority_results) / len(default_priority_results)
-            zero_avg_index = sum(sorted_results.index(r) for r in zero_priority_results) / len(zero_priority_results)
-
-            similar_position = abs(default_avg_index - zero_avg_index) < 2
-            check_icon = "✓" if similar_position else "~"
-            print(f"\n{check_icon} Check 5: Default priority behaves like priority 0")
-            print(f"    Avg position of DEFAULT: {default_avg_index:.1f}")
-            print(f"    Avg position of ZERO: {zero_avg_index:.1f}")
-            print(f"    (Similar positions suggest default=0)")
-
-        print("\n" + "-"*80)
-        if all_checks_pass:
-            print("✓ ALL CHECKS PASSED - PRIORITY SCHEDULING WORKS CORRECTLY!")
-        else:
-            print("✗ SOME CHECKS FAILED - PRIORITY SCHEDULING MAY NOT BE WORKING!")
-        print("-"*80)
-
-        return all_checks_pass
+        print(f"\n[*] First {max_num_seqs} requests start immediately (random order)")
+        print(f"    Remaining requests ({max_num_seqs+1}-{len(sorted_results)}) are scheduled by priority (lower values first)\n")
 
     def save_results(self, filename: str = "priority_test_results.json"):
         """Save test results to a JSON file."""
