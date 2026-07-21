@@ -1,40 +1,36 @@
-apiVersion: serving.kserve.io/v1alpha1
+apiVersion: serving.kserve.io/v1alpha2
 kind: LLMInferenceService
 metadata:
-  name: gpt-oss-20b
-  namespace: demo-llm
   annotations:
+    opendatahub.io/genai-use-case: agent
     opendatahub.io/hardware-profile-name: gpu-profile
     opendatahub.io/hardware-profile-namespace: redhat-ods-applications
     opendatahub.io/model-type: generative
     openshift.io/display-name: gpt-oss-20b
     security.opendatahub.io/enable-auth: 'false'
-    opendatahub.io/genai-use-case: agent
+    serving.kserve.io/stop: 'false'
+  resourceVersion: '31677334'
+  name: gpt-oss-20b
+  namespace: demo-llm
   labels:
-    opendatahub.io/genai-asset: 'true'
     opendatahub.io/dashboard: 'true'
+    opendatahub.io/genai-asset: 'true'
 spec:
-  replicas: 0
   model:
-    uri: hf://RedHatAI/gpt-oss-20b
-    # uri: pvc://tinyllama-1.1b-pvc/stored_model/
     name: gpt-oss-20b
+    uri: 'pvc://gpt-oss-20b-model-pvc/stored_model'
+  replicas: 1
   router:
+    gateway:
+      refs:
+        - name: maas-default-gateway
+          namespace: openshift-ingress
+    route: {}
     scheduler:
       template:
         containers:
-          - name: main
-            env:
-              - name: TOKENIZER_CACHE_DIR
-                value: /tmp/tokenizer-cache
-              - name: HF_HOME
-                value: /tmp/tokenizer-cache
-              - name: TRANSFORMERS_CACHE
-                value: /tmp/tokenizer-cache
-              - name: XDG_CACHE_HOME
-                value: /tmp
-            args:
-              - --pool-group
+          - args:
+              - '--pool-group'
               - inference.networking.x-k8s.io
               - '--pool-name'
               - '{{ ChildName .ObjectMeta.Name `-inference-pool` }}'
@@ -67,38 +63,34 @@ spec:
                     weight: 2
                   - pluginRef: prefix-cache-scorer
                     weight: 3
+            env:
+              - name: TOKENIZER_CACHE_DIR
+                value: /tmp/tokenizer-cache
+              - name: HF_HOME
+                value: /tmp/tokenizer-cache
+              - name: TRANSFORMERS_CACHE
+                value: /tmp/tokenizer-cache
+              - name: XDG_CACHE_HOME
+                value: /tmp
+            name: main
+            resources: {}
             volumeMounts:
-              - name: tokenizer-cache
-                mountPath: /tmp/tokenizer-cache
-              - name: cachi2-cache
-                mountPath: /cachi2
+              - mountPath: /tmp/tokenizer-cache
+                name: tokenizer-cache
+              - mountPath: /cachi2
+                name: cachi2-cache
         volumes:
-          - name: tokenizer-cache
-            emptyDir: {}
-          - name: cachi2-cache
-            emptyDir: {} 
-    route: { }
-    gateway: { }
+          - emptyDir: {}
+            name: tokenizer-cache
+          - emptyDir: {}
+            name: cachi2-cache
   template:
-    tolerations:
-      - key: "nvidia.com/gpu"
-        operator: "Exists"
-        effect: "NoSchedule"
     containers:
-      - name: main
-        env:
+      - env:
           - name: VLLM_ADDITIONAL_ARGS
-            value: "--disable-uvicorn-access-log --max-model-len=2000 --gpu-memory-utilization=0.8 --scheduling-policy priority"
-        resources:
-          limits:
-            cpu: '1'
-            memory: 8Gi
-            nvidia.com/gpu: "1"
-          requests:
-            cpu: '1'
-            memory: 8Gi
-            nvidia.com/gpu: "1"
+            value: '--max-num-seqs=2 --disable-uvicorn-access-log --max-model-len=5000 --gpu-memory-utilization=0.8 --enable_prefix_caching --enable-force-include-usage --scheduling-policy priority'
         livenessProbe:
+          failureThreshold: 5
           httpGet:
             path: /health
             port: 8000
@@ -106,4 +98,17 @@ spec:
           initialDelaySeconds: 120
           periodSeconds: 30
           timeoutSeconds: 30
-          failureThreshold: 5
+        name: main
+        resources:
+          limits:
+            cpu: '1'
+            memory: 8Gi
+            nvidia.com/gpu: '1'
+          requests:
+            cpu: '1'
+            memory: 8Gi
+            nvidia.com/gpu: '1'
+    tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
